@@ -44,6 +44,7 @@ struct StatsView: View {
                 if vm.checkins.isEmpty {
                     emptyState
                 } else {
+                    TodaySpotlight(energy: TodayEnergy.from(vm.checkins))
                     summaryCards
                     dailyCard
                     trendCard

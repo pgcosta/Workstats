@@ -8,12 +8,16 @@ struct MenuBarView: View {
     @Binding var lastTrigger: String
     @Binding var attention: Bool
     @Environment(\.openWindow) var openWindow
+    /// Dismisses the dropdown popover itself (e.g. before showing Stats,
+    /// so the popover doesn't cover the new window).
+    @Environment(\.dismiss) var dismissPopover
 
     @State private var showForm = false
     @State private var revealNext = false
     @State private var showRhythm = false
     @State private var launchAtLogin = false
     @State private var loginError: String?
+    @State private var todayEnergy = TodayEnergy()
 
     /// Matches persisted window to a preset, nil = custom (from older stepper UI).
     private var activePreset: (String, String, Double, Double)? {
@@ -25,6 +29,8 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
+
+            TodayEnergyCard(energy: todayEnergy)
 
             if !scheduler.notificationsOK {
                 Button {
@@ -100,6 +106,7 @@ struct MenuBarView: View {
             Group {
                 rowButton("📈 Open Stats") {
                     openWindow(id: "stats")
+                    dismissPopover()
                     NSApp.activate(ignoringOtherApps: true)
                 }
                 rowButton(scheduler.pausedToday ? "▶️ Resume" : "⏸️ Pause for today") {
@@ -132,7 +139,9 @@ struct MenuBarView: View {
         .onAppear {
             refreshLoginStatus()
             scheduler.refreshNotificationStatus()
+            refreshEnergy()
         }
+        .onChange(of: store.todayCount) { _ in refreshEnergy() }
         .onChange(of: attention) { needs in
             if needs { withAnimation { showForm = true } }
         }
@@ -149,6 +158,10 @@ struct MenuBarView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }
+    }
+
+    private func refreshEnergy() {
+        todayEnergy = TodayEnergy.from(StatsEngine.load())
     }
 
     // MARK: - Launch at login (SMAppService, macOS 13+)

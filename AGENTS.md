@@ -82,6 +82,26 @@ Always `swift build` after edits; also run `./build-app.sh` when the bundle
 matters (Info.plist / packaging). Commit with conventional messages
 (`feat:`, `fix:` …). Ignored: `.build/`, `WorkStats.app/`, `.DS_Store`.
 
+## Experiment workflow (rollback-safe changes)
+
+`main` is the stable line. Risky/exploratory work lives on branches:
+
+```sh
+git switch main && git pull        # start clean
+git checkout -b exp/<name>         # experiment here
+# …build, run, evaluate…
+git add -A && git commit -m "exp: <what you tried>"
+```
+
+- Keep it: `git switch main && git merge exp/<name>`.
+- Drop it: `git switch main && git branch -D exp/<name>` — main untouched.
+- CSV data is never at risk (lives in `~/Documents`, outside git).
+
+Past experiment: `exp/energy-orb` (plasma orb + streaks, see
+`Gamification.swift`). Pattern for new dopamine/experiment ideas: new file +
+small hooks in `MenuBarView`/`StatsView`, nothing in `Scheduler` unless the
+prompt loop itself changes.
+
 ## Gotchas
 
 - `openWindow` env works **only inside Views** — hence `MenuBarBridge`.
