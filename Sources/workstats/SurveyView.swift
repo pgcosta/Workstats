@@ -165,6 +165,7 @@ struct CheckinPanel: View {
             },
             onCancel: {
                 attention = false
+                scheduler.skip()
                 dismiss()
             }
         )

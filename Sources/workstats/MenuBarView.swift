@@ -119,6 +119,7 @@ struct MenuBarView: View {
                     },
                     onCancel: {
                         attention = false
+                        scheduler.skip()
                         withAnimation { showForm = false }
                     }
                 )
@@ -233,7 +234,7 @@ struct MenuBarView: View {
             if scheduler.nextCheck != nil, !scheduler.pausedToday {
                 HStack(spacing: 6) {
                     if revealNext, let next = scheduler.nextCheck {
-                        Label("Next ~\(next, style: .time)", systemImage: "timer")
+                        Label(nextLabel(next), systemImage: "timer")
                         Spacer()
                         Button {
                             revealNext = false
@@ -274,6 +275,21 @@ struct MenuBarView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
             revealNext = false
         }
+    }
+
+    /// Date-aware reveal label: the old time-only label ("Next ~09:00") hid
+    /// whether the fire is today or tomorrow, which made legit next-9:00
+    /// scheduling look like a bug.
+    private func nextLabel(_ date: Date) -> String {
+        let t = DateFormatter()
+        t.timeStyle = .short
+        let time = t.string(from: date)
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "Today ~\(time)" }
+        if cal.isDateInTomorrow(date) { return "Tomorrow ~\(time)" }
+        let d = DateFormatter()
+        d.dateFormat = "EEE"
+        return "\(d.string(from: date)) ~\(time)"
     }
 
     // MARK: - Prompt rhythm settings

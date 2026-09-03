@@ -113,6 +113,13 @@ final class Scheduler: ObservableObject {
         scheduleNext(reason: "checkin")
     }
 
+    /// Skip = "not now": same fresh window as a submit, restarted at skip time.
+    /// (Previously Skip kept the stale fallback computed at fire time, which
+    /// is why the revealed time could surprise — e.g. tomorrow 09:00.)
+    func skip() {
+        scheduleNext(reason: "skipped")
+    }
+
     func snooze(minutes: Double = 5) {
         timer?.invalidate()
         let fire = Date().addingTimeInterval(minutes * 60)
