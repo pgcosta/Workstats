@@ -139,3 +139,35 @@ struct SurveyFormView: View {
         return inverted ? scale[4 - idx] : scale[idx]
     }
 }
+
+/// Standalone panel for the user-initiated "Check in" window
+/// (opened by tapping the notification toast — never auto-opened).
+struct CheckinPanel: View {
+    @Environment(\.dismiss) var dismiss
+    @ObservedObject var store: CheckinStore
+    @ObservedObject var scheduler: Scheduler
+    @Binding var lastTrigger: String
+    @Binding var attention: Bool
+
+    var body: some View {
+        SurveyFormView(
+            trigger: lastTrigger,
+            onSave: {
+                store.append($0)
+                scheduler.recordCheckin()
+                attention = false
+                dismiss()
+            },
+            onSnooze: {
+                scheduler.snooze()
+                attention = false
+                dismiss()
+            },
+            onCancel: {
+                attention = false
+                dismiss()
+            }
+        )
+        .onDisappear { store.refreshTodayCount() }
+    }
+}

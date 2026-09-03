@@ -181,6 +181,29 @@ final class Scheduler: ObservableObject {
         }
     }
 
+    /// Level-up moment: once per day, a streak hitting the goal fires a
+    /// celebratory toast + sound. Called from the streak watcher.
+    func celebrateStreakIfNew(_ streak: Int) {
+        guard streak >= streakGoal else { return }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        let key = "workstats.celebratedStreak.\(f.string(from: Date()))"
+        guard !defaults.bool(forKey: key) else { return }
+        defaults.set(true, forKey: key)
+        let content = UNMutableNotificationContent()
+        content.title = "🔥 Focus streak ×\(streak)!"
+        content.body = "Three locked-in check-ins in a row. Ride the wave 🌊"
+        content.sound = .default
+        if #available(macOS 12, *) {
+            content.interruptionLevel = .timeSensitive
+        }
+        UNUserNotificationCenter.current().add(UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil
+        ))
+    }
+
     /// Native toast (top-right) + system sound. No focus steal, no popup.
     /// `.timeSensitive` lets it break through most Focus modes.
     /// The menu-bar icon badge (attention flag via onFire) is the backup cue.

@@ -100,11 +100,18 @@ git add -A && git commit -m "exp: <what you tried>"
 Past experiment: `exp/energy-orb` (plasma orb + streaks, see
 `Gamification.swift`). Pattern for new dopamine/experiment ideas: new file +
 small hooks in `MenuBarView`/`StatsView`, nothing in `Scheduler` unless the
-prompt loop itself changes.
+prompt loop itself changes. Gamification constants live in
+`Gamification.swift` (`streakGoal = 3`, `dailyGoal = 8`); the level-up toast
+(`celebrateStreakIfNew`, once per day) lives in `Scheduler`.
 
 ## Gotchas
 
 - `openWindow` env works **only inside Views** — hence `MenuBarBridge`.
+  Notification taps are routed the same way: `CheckinTapRouter`
+  (`UNUserNotificationCenterDelegate`, set in `WorkStatsApp.init`) posts
+  `workstats.openCheckin` via `NotificationCenter`, and the bridge (which owns
+  `openWindow`) opens the user-initiated `checkin` Window. Tapping a toast
+  must never open Stats.
 - Dropdown buttons must use the `rowButton()` helper (full-width label +
   `contentShape`) — plain buttons otherwise only hit-test their text.
 - `MenuBarExtra` uses `.menuBarExtraStyle(.window)`; label closure swaps the

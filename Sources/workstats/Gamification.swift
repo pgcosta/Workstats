@@ -7,6 +7,9 @@ import SwiftUI
 // plus a 🔥 streak of consecutive focus>=4 check-ins. Positive-only:
 // bad check-ins never shrink the orb below its floor, they just don't grow it.
 
+/// Streak goal: consecutive focus>=4 check-ins. Hit it -> level-up toast.
+let streakGoal = 3
+
 /// Soft daily goal — feeds the progress ring, nothing else.
 let dailyGoal = 8
 
@@ -122,34 +125,70 @@ struct EnergyBall: View {
     }
 }
 
-// MARK: - Compact Today card (dropdown)
+// MARK: - Compact Today card (dropdown, orb opens Stats)
 
 struct TodayEnergyCard: View {
     var energy: TodayEnergy
+    var onOrbTap: () -> Void = {}
 
     var body: some View {
-        HStack(spacing: 12) {
-            EnergyBall(energy: energy.energy, size: 56)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(energy.level)
-                    .font(.callout.weight(.semibold))
-                HStack(spacing: 8) {
-                    Label("\(energy.count)/\(dailyGoal)", systemImage: "checklist")
-                    if energy.streak >= 2 {
-                        Label("🔥×\(energy.streak)", systemImage: "flame.fill")
-                            .foregroundStyle(.orange)
-                    } else if energy.lockedIn > 0 {
-                        Label("⚡️×\(energy.lockedIn)", systemImage: "bolt.fill")
-                            .foregroundStyle(.yellow)
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Button(action: onOrbTap) {
+                    EnergyBall(energy: energy.energy, size: 56)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
+                .help("Open stats")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(energy.level)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    HStack(spacing: 6) {
+                        Text("🧾 \(energy.count)/\(dailyGoal)")
+                            .chip(.blue)
+                        if energy.streak >= 2 {
+                            Text("🔥 ×\(energy.streak)")
+                                .chip(.orange)
+                        } else if energy.lockedIn > 0 {
+                            Text("⚡️ ×\(energy.lockedIn)")
+                                .chip(.green)
+                        }
+                    }
+                    .font(.caption.weight(.bold))
+                }
+                Spacer()
             }
-            Spacer()
+            // Streak explainer + progress pips: the explicit goal.
+            HStack(spacing: 6) {
+                ForEach(0..<streakGoal, id: \.self) { i in
+                    Circle()
+                        .fill(i < min(energy.streak, streakGoal) ? Color.orange : Color.secondary.opacity(0.25))
+                        .frame(width: 10, height: 10)
+                }
+                Text(streakText)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+            }
         }
         .padding(10)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var streakText: String {
+        if energy.streak >= streakGoal {
+            return "Streak goal smashed 🎉 — keep riding it"
+        }
+        return "Log focus 4–5, \(streakGoal)× in a row → 🔥 (\(min(energy.streak, streakGoal))/\(streakGoal))"
+    }
+}
+
+private extension View {
+    /// Solid high-contrast chip — readable on any translucent background.
+    func chip(_ color: Color) -> some View {
+        self.padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(color, in: Capsule())
+            .foregroundStyle(.white)
     }
 }
 
@@ -175,8 +214,10 @@ struct TodaySpotlight: View {
                         if energy.lockedIn > 0 {
                             winRow(emoji: "⚡️", text: "\(energy.lockedIn) locked-in moment\(energy.lockedIn == 1 ? "" : "s") (focus 4–5)")
                         }
-                        if energy.streak >= 2 {
-                            winRow(emoji: "🔥", text: "\(energy.streak)-in-a-row focus streak — don't break it")
+                        if energy.streak >= streakGoal {
+                            winRow(emoji: "🎉", text: "STREAK GOAL ×\(streakGoal) smashed — Unstoppable mode")
+                        } else if energy.streak >= 2 {
+                            winRow(emoji: "🔥", text: "\(energy.streak)-in-a-row — \(streakGoal - energy.streak) more to goal ×\(streakGoal)")
                         }
                         if let best = energy.bestFocus {
                             winRow(emoji: "🏆", text: "Peak at \(Self.time(best.timestamp)) — focus \(best.focus ?? 0)/5")
