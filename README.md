@@ -5,11 +5,12 @@ Menu bar sampler for work sentiment. Random prompts during workday, 10-second ch
 ## ✨ Features
 
 - 🧭 Menu bar only (`LSUIElement`), no dock icon
-- 🎲 Random prompts every 20–40 min, Mon–Fri 9:00–18:00 only
-- 🔔 Native notification + popup survey window on each prompt
+- 🎲 Random prompts, Mon–Fri 9:00–18:00, surprise mode (exact time hidden 🤫, 👁️ to reveal)
+- ⏱️ Prompt rhythm: default 10–30 min window, restarts after every submitted check-in; collapsible presets ⚡️5–15 🌱10–30 ☕️20–45 🧘30–60, persisted
+- 🔔 Native toast (top-right) + system sound (time-sensitive, breaks through most Focus modes) + 🔔 menu-icon badge. Never steals focus, never pops a window — check in from the dropdown when ready. Tip: in Settings → Notifications → WorkStats pick **Alerts** so the toast stays until dismissed
 - ✏️ Inline check-in form in dropdown (manual entries never leave menu)
 - 💼/☕ Working vs Leisure; leisure rows skip sliders
-- 🎯 Focus depth 1–5, 🌀 Procrastination 1–5, 🏆 Feeling of accomplishment 1–5
+- 🎯 Focus depth 1–5 (5 = green), 🌀 Procrastination 1–5 (1 = green, 5 = red — lower is better), 🏆 Feeling of accomplishment 1–5
 - 😴 Snooze 5 min, Skip, 💾 Save with confirmation flash
 - 🧾 CSV log at `~/Documents/workstats.csv`
 - 📈 Stats window: daily 3-bar chart, score trend, focus-by-hour, focus-by-weekday, best/worst day cards, day-by-day table, 7d/30d/90d/All ranges
@@ -26,14 +27,22 @@ open WorkStats.app
 
 `build-app.sh` runs `swift build -c release`, bundles `WorkStats.app` (`Contents/MacOS/WorkStats` + `Info.plist`). First launch asks notification permission; allow it for 🎲 prompts.
 
-Keep app running in background during workday. Optional: add to Login Items for autostart.
+Keep app running in background during workday.
+
+## 🚀 Start at login
+
+Easiest: dropdown → **🚀 Start at login** toggle (uses `SMAppService`, macOS 13+).
+Tip: move `WorkStats.app` to `/Applications` first — the system trusts it more there.
+
+Manual fallback: **Settings → General → Login Items → + → WorkStats.app**.
+Note: locally built unsigned apps can be blocked from auto-registering; the toggle then shows the manual path.
 
 ## 🖱️ Use
 
 | Action | Where |
 |---|---|
 | ✏️ Check in now | Menu bar dropdown → expands inline form |
-| 🎲 Random prompt | Notification + centered `Check-in` window |
+| 🎲 Random prompt | Banner + sound + icon badge; form auto-expands in dropdown |
 | 😴 Snooze 5m | Survey form button, re-fires as `snoozed` |
 | ⏸️ Pause / ▶️ Resume | Dropdown, pauses until resume (no persist across relaunch) |
 | 📈 Open Stats | Dropdown → `Stats` window |

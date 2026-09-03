@@ -3,25 +3,66 @@ import AppKit
 import UserNotifications
 import Combine
 
-/// Fires random prompts every 20-40 min, Mon-Fri 9:00-18:00.
-/// Outside window: schedules next check at next 9:00 weekday.
+/// Fires random prompts Mon-Fri 9:00-18:00.
+/// Soft alerts: banner notification (silent) + system sound + menu-bar badge.
+/// Never steals focus, never auto-opens windows; user checks in via dropdown.
+/// Default window 10-30 min: app start -> first prompt in 10-30 min;
+/// after every submitted check-in the clock restarts (-> next in 10-30 min).
+/// Outside work hours: waits for next 9:00 weekday.
 final class Scheduler: ObservableObject {
     @Published var nextCheck: Date?
     @Published var pausedToday = false
+    @Published var notificationsOK = true // false when system notifications denied/ephemeral-off
+    @Published var minMinutes: Double
+    @Published var maxMinutes: Double
 
     private var timer: Timer?
-    private let minInterval: TimeInterval = 20 * 60
-    private let maxInterval: TimeInterval = 40 * 60
+    private let defaults = UserDefaults.standard
+    private let minKey = "workstats.minMinutes"
+    private let maxKey = "workstats.maxMinutes"
+
+    /// Friendly presets: (emoji, name, min, max)
+    static let presets: [(String, String, Double, Double)] = [
+        ("⚡️", "Quick", 5, 15),
+        ("🌱", "Steady", 10, 30),
+        ("☕️", "Relaxed", 20, 45),
+        ("🧘", "Deep work", 30, 60),
+    ]
 
     var onFire: ((String) -> Void)?
 
     init() {
+        let savedMin = defaults.double(forKey: minKey)
+        let savedMax = defaults.double(forKey: maxKey)
+        self.minMinutes = savedMin >= 2 ? savedMin : 10
+        self.maxMinutes = savedMax > savedMin ? savedMax : 30
+        if self.maxMinutes <= self.minMinutes { self.maxMinutes = self.minMinutes + 10 }
         requestNotificationAuth()
         scheduleNext(reason: "init")
     }
 
+    /// Change notification window (minutes). Clamps + persists + restarts clock.
+    func setWindow(min: Double, max: Double) {
+        var lo = min.rounded()
+        var hi = max.rounded()
+        lo = Swift.min(Swift.max(2, lo), 170)
+        hi = Swift.min(Swift.max(lo + 1, hi), 180)
+        minMinutes = lo
+        maxMinutes = hi
+        defaults.set(lo, forKey: minKey)
+        defaults.set(hi, forKey: maxKey)
+        scheduleNext(reason: "settings")
+    }
+
     func randomInterval() -> TimeInterval {
-        Double.random(in: minInterval...maxInterval)
+        let lo = minMinutes * 60
+        let hi = max(maxMinutes * 60, lo + 60)
+        return Double.random(in: lo...hi)
+    }
+
+    /// Human summary, e.g. "10–30 min".
+    var windowSummary: String {
+        "\(Int(minMinutes))–\(Int(maxMinutes)) min"
     }
 
     func scheduleNext(reason: String) {
@@ -45,7 +86,7 @@ final class Scheduler: ObservableObject {
             return
         }
 
-        let interval = reason == "init" ? randomInterval() : randomInterval()
+        let interval = randomInterval()
         var fire = now.addingTimeInterval(interval)
         // If fire lands outside window, clamp to next window instead
         if !isWorkTime(fire) {
@@ -61,8 +102,15 @@ final class Scheduler: ObservableObject {
     func fire(trigger: String = "manual") {
         onFire?(trigger)
         sendNotification()
-        // Chain next random slot
+        // Safety fallback: if user ignores the badge (never submits),
+        // a fresh window still starts so prompts don't stall.
+        // A submitted check-in calls recordCheckin() which restarts it.
         scheduleNext(reason: "fired")
+    }
+
+    /// Call on every submitted check-in: restart the 10-30 (or custom) window now.
+    func recordCheckin() {
+        scheduleNext(reason: "checkin")
     }
 
     func snooze(minutes: Double = 5) {
@@ -118,23 +166,36 @@ final class Scheduler: ObservableObject {
     // MARK: - Notifications
 
     private func requestNotificationAuth() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] _, _ in
+            self?.refreshNotificationStatus()
+        }
+        refreshNotificationStatus()
     }
 
+    /// Re-checks system permission (user can flip it in Settings anytime).
+    func refreshNotificationStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            let ok = settings.authorizationStatus == .authorized
+                || settings.authorizationStatus == .provisional
+            DispatchQueue.main.async { self?.notificationsOK = ok }
+        }
+    }
+
+    /// Native toast (top-right) + system sound. No focus steal, no popup.
+    /// `.timeSensitive` lets it break through most Focus modes.
+    /// The menu-bar icon badge (attention flag via onFire) is the backup cue.
     private func sendNotification() {
         let content = UNMutableNotificationContent()
         content.title = "WorkStats check-in"
-        content.body = "Working or leisure? Tap to log focus."
+        content.body = "Time for a quick check-in — click the 📊 icon in the menu bar."
         content.sound = .default
-        let req = UNNotificationRequest(
+        if #available(macOS 12, *) {
+            content.interruptionLevel = .timeSensitive
+        }
+        UNUserNotificationCenter.current().add(UNNotificationRequest(
             identifier: UUID().uuidString,
             content: content,
             trigger: nil // immediate
-        )
-        UNUserNotificationCenter.current().add(req)
-        // Bring survey window forward
-        DispatchQueue.main.async {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        ))
     }
 }

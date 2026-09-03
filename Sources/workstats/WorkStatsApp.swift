@@ -6,27 +6,21 @@ struct WorkStatsApp: App {
     @StateObject private var store = CheckinStore()
     @StateObject private var scheduler = Scheduler()
     @State private var lastTrigger = "random"
+    /// Soft-alert flag: bell badge on the menu icon until the user checks in.
+    @State private var attention = false
 
     var body: some Scene {
-        MenuBarExtra("WorkStats", systemImage: "chart.bar") {
+        MenuBarExtra {
             MenuBarBridge(
                 store: store,
                 scheduler: scheduler,
-                lastTrigger: $lastTrigger
+                lastTrigger: $lastTrigger,
+                attention: $attention
             )
+        } label: {
+            Label("WorkStats", systemImage: attention ? "bell.badge.fill" : "chart.bar")
         }
         .menuBarExtraStyle(.window)
-
-        Window("Check-in", id: "survey") {
-            SurveyView(
-                trigger: lastTrigger,
-                onSave: { store.append($0) },
-                onSnooze: { scheduler.snooze() }
-            )
-            .onDisappear { store.refreshTodayCount() }
-        }
-        .windowResizability(.contentSize)
-        .defaultPosition(.center)
 
         Window("Stats", id: "stats") {
             StatsView(store: store)
@@ -35,21 +29,20 @@ struct WorkStatsApp: App {
     }
 }
 
-/// Captures openWindow env (only valid inside a View) and wires scheduler.
-/// Manual check-ins stay inline in dropdown; random/snoozed open popup Window.
+/// Wires scheduler fires to the soft-alert flag. No popups, no focus steal:
+/// the user notices the 🔔 badge + sound and checks in via the dropdown.
 struct MenuBarBridge: View {
     @ObservedObject var store: CheckinStore
     @ObservedObject var scheduler: Scheduler
     @Binding var lastTrigger: String
-    @Environment(\.openWindow) var openWindow
+    @Binding var attention: Bool
 
     var body: some View {
-        MenuBarView(store: store, scheduler: scheduler, lastTrigger: $lastTrigger)
+        MenuBarView(store: store, scheduler: scheduler, lastTrigger: $lastTrigger, attention: $attention)
             .onAppear {
                 scheduler.onFire = { trigger in
                     lastTrigger = trigger
-                    openWindow(id: "survey")
-                    NSApp.activate(ignoringOtherApps: true)
+                    attention = true
                 }
             }
     }

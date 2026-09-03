@@ -1,6 +1,9 @@
 import SwiftUI
 
-/// Reusable form, embedded both in dropdown and in popup Window.
+/// Check-in form, embedded in the menu-bar dropdown.
+/// Direction of "good": focus/accomplishment are higher-is-better, but
+/// procrastination is lower-is-better, so its badge scale is inverted
+/// (1 = green, 5 = red) and its slider tint is red.
 struct SurveyFormView: View {
     var trigger: String = "random"
     var compact: Bool = false
@@ -32,8 +35,9 @@ struct SurveyFormView: View {
                 )
                 sliderRow(
                     emoji: "🌀", title: "Procrastination",
-                    value: $procrastination, tint: .orange,
-                    hints: ["none", "heavy"]
+                    value: $procrastination, tint: .red,
+                    hints: ["none 😌", "heavy 😬"],
+                    invertScale: true
                 )
                 sliderRow(
                     emoji: "🏆", title: "Feeling of accomplishment",
@@ -100,18 +104,20 @@ struct SurveyFormView: View {
         }
     }
 
-    private func sliderRow(emoji: String, title: String, value: Binding<Double>, tint: Color, hints: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private func sliderRow(emoji: String, title: String, value: Binding<Double>, tint: Color, hints: [String], invertScale: Bool = false) -> some View {
+        let v = Int(value.wrappedValue)
+        let color = ratingColor(v, inverted: invertScale)
+        return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text("\(emoji) \(title)")
                 Spacer()
-                Text("\(Int(value.wrappedValue)) / 5")
+                Text("\(v) / 5")
                     .monospacedDigit()
                     .font(.callout.weight(.semibold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
-                    .background(ratingColor(Int(value.wrappedValue)).opacity(0.15), in: Capsule())
-                    .foregroundStyle(ratingColor(Int(value.wrappedValue)))
+                    .background(color.opacity(0.15), in: Capsule())
+                    .foregroundStyle(color)
             }
             .font(.callout)
             Slider(value: value, in: 1...5, step: 1)
@@ -126,30 +132,10 @@ struct SurveyFormView: View {
         .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private func ratingColor(_ v: Int) -> Color {
-        switch v {
-        case 1: return .red
-        case 2: return .orange
-        case 3: return .yellow
-        case 4: return .mint
-        default: return .green
-        }
-    }
-}
-
-/// Popup Window wrapper (random prompts).
-struct SurveyView: View {
-    @Environment(\.dismiss) var dismiss
-    var trigger: String = "random"
-    var onSave: (Checkin) -> Void
-    var onSnooze: () -> Void
-
-    var body: some View {
-        SurveyFormView(
-            trigger: trigger,
-            onSave: { onSave($0); dismiss() },
-            onSnooze: onSnooze,
-            onCancel: { dismiss() }
-        )
+    /// Standard 1=red … 5=green; inverted for lower-is-better metrics.
+    private func ratingColor(_ v: Int, inverted: Bool = false) -> Color {
+        let scale: [Color] = [.red, .orange, .yellow, .mint, .green]
+        let idx = min(max(v - 1, 0), 4)
+        return inverted ? scale[4 - idx] : scale[idx]
     }
 }
