@@ -8,12 +8,16 @@ struct MenuBarView: View {
     @Binding var lastTrigger: String
     @Binding var attention: Bool
     @Environment(\.openWindow) var openWindow
+    /// Dismisses the dropdown popover itself (e.g. before showing Stats,
+    /// so the popover doesn't cover the new window).
+    @Environment(\.dismiss) var dismissPopover
 
     @State private var showForm = false
     @State private var revealNext = false
     @State private var showRhythm = false
     @State private var launchAtLogin = false
     @State private var loginError: String?
+    @State private var todayEnergy = TodayEnergy()
 
     /// Matches persisted window to a preset, nil = custom (from older stepper UI).
     private var activePreset: (String, String, Double, Double)? {
@@ -25,6 +29,12 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
+
+            TodayEnergyCard(energy: todayEnergy) {
+                openWindow(id: "stats")
+                dismissPopover()
+                NSApp.activate(ignoringOtherApps: true)
+            }
 
             if !scheduler.notificationsOK {
                 Button {
@@ -59,15 +69,40 @@ struct MenuBarView: View {
                 .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
             }
 
+            // Hero action: the 10-second check-in is the whole point of the app.
             Button {
                 withAnimation { showForm.toggle() }
             } label: {
-                Label(showForm ? "Hide form" : "✏️ Check in now", systemImage: showForm ? "chevron.up" : "square.and.pencil")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 8) {
+                    Image(systemName: showForm ? "chevron.up" : "bolt.heart.fill")
+                        .font(.title3)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(showForm ? "Hide check-in form"
+                             : attention ? "🔔 Log your check-in!"
+                             : "⚡️ Log how you're doing")
+                            .font(.callout.weight(.bold))
+                        if !showForm {
+                            Text("10 seconds • working or leisure?")
+                                .font(.caption2)
+                                .opacity(0.9)
+                        }
+                    }
+                    Spacer()
+                    if attention {
+                        Image(systemName: "bell.badge.fill")
+                    }
+                }
+                .foregroundStyle(.white)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(6)
-            .background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            .background(
+                LinearGradient(colors: [.blue, .purple],
+                               startPoint: .leading, endPoint: .trailing),
+                in: RoundedRectangle(cornerRadius: 10)
+            )
 
             if showForm {
                 SurveyFormView(
@@ -100,6 +135,7 @@ struct MenuBarView: View {
             Group {
                 rowButton("📈 Open Stats") {
                     openWindow(id: "stats")
+                    dismissPopover()
                     NSApp.activate(ignoringOtherApps: true)
                 }
                 rowButton(scheduler.pausedToday ? "▶️ Resume" : "⏸️ Pause for today") {
@@ -132,7 +168,10 @@ struct MenuBarView: View {
         .onAppear {
             refreshLoginStatus()
             scheduler.refreshNotificationStatus()
+            refreshEnergy()
         }
+        .onChange(of: store.todayCount) { _ in refreshEnergy() }
+        .onChange(of: todayEnergy.streak) { s in scheduler.celebrateStreakIfNew(s) }
         .onChange(of: attention) { needs in
             if needs { withAnimation { showForm = true } }
         }
@@ -149,6 +188,10 @@ struct MenuBarView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }
+    }
+
+    private func refreshEnergy() {
+        todayEnergy = TodayEnergy.from(StatsEngine.load())
     }
 
     // MARK: - Launch at login (SMAppService, macOS 13+)
