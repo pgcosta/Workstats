@@ -1,0 +1,4 @@
+.build/
+WorkStats.app/
+*.o
+.DS_Store

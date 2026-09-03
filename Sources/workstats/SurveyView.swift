@@ -1,0 +1,155 @@
+import SwiftUI
+
+/// Reusable form, embedded both in dropdown and in popup Window.
+struct SurveyFormView: View {
+    var trigger: String = "random"
+    var compact: Bool = false
+    var onSave: (Checkin) -> Void
+    var onSnooze: () -> Void
+    var onCancel: (() -> Void)? = nil
+
+    @State private var mode: ActivityMode = .working
+    @State private var focus: Double = 3
+    @State private var procrastination: Double = 3
+    @State private var accomplished: Double = 3
+    @State private var savedFlash = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+
+            Picker("Right now:", selection: $mode) {
+                Text("💼 Working").tag(ActivityMode.working)
+                Text("☕ Leisure").tag(ActivityMode.leisure)
+            }
+            .pickerStyle(.segmented)
+
+            if mode == .working {
+                sliderRow(
+                    emoji: "🎯", title: "Focus depth",
+                    value: $focus, tint: .purple,
+                    hints: ["scattered", "deep"]
+                )
+                sliderRow(
+                    emoji: "🌀", title: "Procrastination",
+                    value: $procrastination, tint: .orange,
+                    hints: ["none", "heavy"]
+                )
+                sliderRow(
+                    emoji: "🏆", title: "Feeling of accomplishment",
+                    value: $accomplished, tint: .green,
+                    hints: ["stuck", "flying"]
+                )
+            } else {
+                Label("Enjoy your break 🌿 — just hit Save.", systemImage: "cup.and.saucer")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Button("😴 5m") {
+                    onSnooze()
+                    onCancel?()
+                }
+                .help("Snooze 5 minutes")
+                Spacer()
+                if onCancel != nil {
+                    Button("Skip") { onCancel?() }
+                        .keyboardShortcut(.cancelAction)
+                }
+                Button(savedFlash ? "✅ Saved!" : "💾 Save") {
+                    let c = Checkin(
+                        timestamp: Date(),
+                        mode: mode,
+                        focus: mode == .working ? Int(focus) : nil,
+                        procrastination: mode == .working ? Int(procrastination) : nil,
+                        accomplished: mode == .working ? Int(accomplished) : nil,
+                        trigger: trigger
+                    )
+                    onSave(c)
+                    savedFlash = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                        savedFlash = false
+                        onCancel?()
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
+            }
+        }
+        .padding(compact ? 12 : 20)
+        .frame(width: compact ? 300 : 340)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("⚡️ Quick check-in")
+                .font(.headline)
+            Text(triggerLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var triggerLabel: String {
+        switch trigger {
+        case "manual": return "✋ Manual entry"
+        case "snoozed": return "😴 Snoozed follow-up"
+        default: return "🎲 Random sample • \(trigger)"
+        }
+    }
+
+    private func sliderRow(emoji: String, title: String, value: Binding<Double>, tint: Color, hints: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("\(emoji) \(title)")
+                Spacer()
+                Text("\(Int(value.wrappedValue)) / 5")
+                    .monospacedDigit()
+                    .font(.callout.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(ratingColor(Int(value.wrappedValue)).opacity(0.15), in: Capsule())
+                    .foregroundStyle(ratingColor(Int(value.wrappedValue)))
+            }
+            .font(.callout)
+            Slider(value: value, in: 1...5, step: 1)
+                .tint(tint)
+            HStack {
+                Text(hints[0]).font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Text(hints[1]).font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .padding(8)
+        .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func ratingColor(_ v: Int) -> Color {
+        switch v {
+        case 1: return .red
+        case 2: return .orange
+        case 3: return .yellow
+        case 4: return .mint
+        default: return .green
+        }
+    }
+}
+
+/// Popup Window wrapper (random prompts).
+struct SurveyView: View {
+    @Environment(\.dismiss) var dismiss
+    var trigger: String = "random"
+    var onSave: (Checkin) -> Void
+    var onSnooze: () -> Void
+
+    var body: some View {
+        SurveyFormView(
+            trigger: trigger,
+            onSave: { onSave($0); dismiss() },
+            onSnooze: onSnooze,
+            onCancel: { dismiss() }
+        )
+    }
+}
