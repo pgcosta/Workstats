@@ -107,23 +107,40 @@ struct StatsView: View {
             if vm.points.isEmpty {
                 Text("No working data in range").foregroundStyle(.secondary)
             } else {
-                Chart(vm.points) {
-                    BarMark(
-                        x: .value("Day", $0.dayLabel),
-                        y: .value("Avg", $0.value),
-                        width: .fixed(10)
-                    )
-                    .position(by: .value("Metric", $0.metric))
-                    .foregroundStyle(by: .value("Metric", $0.metric))
+                // Few days stretch across the full width and look lost.
+                // Cap the plot width so 1–2 days render as a tight centered
+                // cluster; full data still fills the card.
+                HStack {
+                    Spacer(minLength: 0)
+                    Chart(vm.points) {
+                        BarMark(
+                            x: .value("Day", $0.dayLabel),
+                            y: .value("Avg", $0.value),
+                            width: .fixed(16)
+                        )
+                        .position(by: .value("Metric", $0.metric))
+                        .foregroundStyle(by: .value("Metric", $0.metric))
+                        .cornerRadius(4)
+                    }
+                    .chartForegroundStyleScale([
+                        "🎯 Focus": Color.purple,
+                        "🌀 Procrast.": Color.orange,
+                        "🏆 Accompl.": Color.green
+                    ])
+                    .chartXScale(domain: vm.days.map(\.label))
+                    .chartYScale(domain: 0...5.5)
+                    .chartYAxis { AxisMarks(values: [0, 1, 2, 3, 4, 5]) }
+                    .chartXAxis {
+                        AxisMarks { v in
+                            AxisGridLine()
+                            AxisValueLabel()
+                                .font(.caption)
+                                .offset(y: 4)
+                        }
+                    }
+                    .frame(width: compactPlotWidth(items: vm.days.count), height: 220)
+                    Spacer(minLength: 0)
                 }
-                .chartForegroundStyleScale([
-                    "🎯 Focus": Color.purple,
-                    "🌀 Procrast.": Color.orange,
-                    "🏆 Accompl.": Color.green
-                ])
-                .chartYScale(domain: 0...5.5)
-                .chartYAxis { AxisMarks(values: [0, 1, 2, 3, 4, 5]) }
-                .frame(height: 240)
             }
         }
     }
@@ -160,15 +177,20 @@ struct StatsView: View {
                 Text("No data").foregroundStyle(.secondary)
             } else {
                 let best = vm.summary.bestHour?.hour
-                Chart(vm.hours) { h in
-                    BarMark(x: .value("Hour", h.label), y: .value("Focus", h.focus))
-                        .foregroundStyle(h.hour == best ? Color.mint : Color.blue.opacity(0.6))
-                        .annotation(position: .top) {
-                            Text(String(format: "%.1f", h.focus)).font(.caption2)
-                        }
+                HStack {
+                    Spacer(minLength: 0)
+                    Chart(vm.hours) { h in
+                        BarMark(x: .value("Hour", h.label), y: .value("Focus", h.focus), width: .fixed(28))
+                            .foregroundStyle(h.hour == best ? Color.mint : Color.blue.opacity(0.6))
+                            .cornerRadius(5)
+                            .annotation(position: .top) {
+                                Text(String(format: "%.1f", h.focus)).font(.caption2)
+                            }
+                    }
+                    .chartYScale(domain: 0...5.5)
+                    .frame(width: compactPlotWidth(items: vm.hours.count, perItem: 52), height: 200)
+                    Spacer(minLength: 0)
                 }
-                .chartYScale(domain: 0...5.5)
-                .frame(height: 200)
             }
         }
     }
@@ -178,15 +200,20 @@ struct StatsView: View {
             if vm.weekdays.isEmpty {
                 Text("No data").foregroundStyle(.secondary)
             } else {
-                Chart(vm.weekdays) { w in
-                    BarMark(x: .value("Day", w.name), y: .value("Focus", w.focus))
-                        .foregroundStyle(Color.indigo.opacity(0.75))
-                        .annotation(position: .top) {
-                            Text(String(format: "%.1f", w.focus)).font(.caption2)
-                        }
+                HStack {
+                    Spacer(minLength: 0)
+                    Chart(vm.weekdays) { w in
+                        BarMark(x: .value("Day", w.name), y: .value("Focus", w.focus), width: .fixed(28))
+                            .foregroundStyle(Color.indigo.opacity(0.75))
+                            .cornerRadius(5)
+                            .annotation(position: .top) {
+                                Text(String(format: "%.1f", w.focus)).font(.caption2)
+                            }
+                    }
+                    .chartYScale(domain: 0...5.5)
+                    .frame(width: compactPlotWidth(items: vm.weekdays.count, perItem: 56), height: 200)
+                    Spacer(minLength: 0)
                 }
-                .chartYScale(domain: 0...5.5)
-                .frame(height: 200)
             }
         }
     }
@@ -264,6 +291,14 @@ struct StatsView: View {
     }
 
     private func fmt(_ v: Double) -> String { v == 0 ? "—" : String(format: "%.1f", v) }
+
+    /// Caps bar-chart plot width so sparse data (1–2 days) renders as a
+    /// tight centered cluster instead of bars stretched across the card.
+    /// ~3 grouped bars need ~84pt/day; single-series bars ~52–56pt each.
+    private func compactPlotWidth(items: Int, perItem: CGFloat = 84, base: CGFloat = 120, max: CGFloat = 760) -> CGFloat? {
+        guard items * Int(perItem) + Int(base) < Int(max) else { return nil } // full width
+        return base + CGFloat(items) * perItem
+    }
 
     private func scoreColor(_ s: Double?) -> Color {
         guard let s else { return .secondary }
