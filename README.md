@@ -2,6 +2,12 @@
 
 Menu bar sampler for work sentiment. Random prompts during workday, 10-second check-in, everything lands in a CSV. Stats window shows daily averages, trends, best/worst days, peak focus hours.
 
+![How it works: random nudge → 10-sec check-in → patterns](docs/screenshots/01-hero-loop.png)
+
+| 10-second check-in | Patterns over time |
+|---|---|
+| <img src="docs/screenshots/02-checkin.png" width="360"> | <img src="docs/screenshots/03-stats.png" width="720"> |
+
 ## ✨ Features
 
 - 🧭 Menu bar only (`LSUIElement`), no dock icon
