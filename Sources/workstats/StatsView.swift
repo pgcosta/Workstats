@@ -265,16 +265,8 @@ struct StatsView: View {
     }
 
     private var footer: some View {
-        HStack {
-            Text("Score rewards focus + accomplishment, penalizes procrastination.")
-                .font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            Button("✨ Add demo data") {
-                StatsEngine.seedDemoData(store: store)
-                vm.reload()
-            }
-            .font(.caption)
-        }
+        Text("Score rewards focus + accomplishment, penalizes procrastination.")
+            .font(.caption).foregroundStyle(.secondary)
     }
 
     // MARK: - Helpers
