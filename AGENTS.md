@@ -13,7 +13,7 @@ Core UX principles (do not regress):
 
 - **Never intrusive.** No focus steal (`NSApp.activate` is banned on the
   prompt path), no auto-opening windows. Prompt = silent banner + Glass sound
-  + `bell.badge.fill` menu icon + amber banner in the dropdown.
+  + orange dot on the menu-bar logo + amber banner in the dropdown.
 - **Surprise timing.** Exact next-fire time hidden behind 👁️ reveal (auto-hides
   in 15 s). Windows are random within the user's rhythm setting.
 - **Lower-is-better exception.** Focus/accomplishment: 5 = green.
@@ -127,8 +127,8 @@ prompt loop itself changes. Gamification constants live in
   must never open Stats.
 - Dropdown buttons must use the `rowButton()` helper (full-width label +
   `contentShape`) — plain buttons otherwise only hit-test their text.
-- `MenuBarExtra` uses `.menuBarExtraStyle(.window)`; label closure swaps the
-  icon based on `attention`.
+- `MenuBarExtra` uses `.menuBarExtraStyle(.window)`; label keeps the
+  `chart.bar` logo and overlays an orange attention dot (never swaps icons).
 - `onChange(of:)`: use the **single-param** form (deployment target is macOS 13).
 - `NSBeep()` is unavailable in this SDK — use `NSSound.beep()` fallback.
 - `SMAppService.mainApp` (🚀 toggle) throws on unsigned local builds; the UI

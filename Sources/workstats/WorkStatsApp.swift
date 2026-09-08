@@ -50,7 +50,18 @@ struct WorkStatsApp: App {
                 attention: $attention
             )
         } label: {
-            Label("WorkStats", systemImage: attention ? "bell.badge.fill" : "chart.bar")
+            // Logo always stays chart.bar — pending check-ins show as an
+            // orange dot, not a swapped bell icon (easier to spot, less noise).
+            Image(systemName: "chart.bar")
+                .overlay(alignment: .topTrailing) {
+                    if attention {
+                        Circle()
+                            .fill(.orange)
+                            .frame(width: 8, height: 8)
+                            .offset(x: 3, y: -3)
+                    }
+                }
+                .accessibilityLabel(attention ? "WorkStats — check-in pending" : "WorkStats")
         }
         .menuBarExtraStyle(.window)
 
