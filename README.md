@@ -18,8 +18,11 @@ Menu bar sampler for work sentiment. Random prompts during workday, 10-second ch
 - 💼/☕ Working vs Leisure; leisure rows skip sliders
 - 🎯 Focus depth 1–5 (5 = green), 🌀 Procrastination 1–5 (1 = green, 5 = red — lower is better), 🏆 Feeling of accomplishment 1–5
 - 😴 Snooze 5 min, Skip, 💾 Save with confirmation flash
+- 🕘 Workday clock-in/out: one-tap Start day (editable times), clock out at day end; history in `~/Documents/workstats_days.csv`, powers early-bird stats
+- ☕ Mid-shift breaks: pause for bathroom/lunch/coffee, prompts go silent, resume restarts the window; Stats shows net active hours
+- 🔕 Manual prompts only (opt-in toggle): ignores 9–18, prompts fire only while clocked in; off by default, zero behavior change until used
 - 🧾 CSV log at `~/Documents/workstats.csv`
-- 📈 Stats window: daily 3-bar chart, score trend, focus-by-hour, focus-by-weekday, best/worst day cards, day-by-day table, 7d/30d/90d/All ranges
+- 📈 Stats window: daily 3-bar chart, score trend, focus-by-hour, focus-by-weekday, best/worst day cards, avg start + earliest 🐦 day, avg active (net of breaks), focused share, day-by-day table, 7d/30d/90d/All ranges
 - ✨ Demo data seeder (empty-state + footer) for instant graph preview
 
 ## 🚀 Run
@@ -50,6 +53,8 @@ Note: locally built unsigned apps can be blocked from auto-registering; the togg
 | ✏️ Check in now | Menu bar dropdown → expands inline form |
 | 🎲 Random prompt | Banner + sound + icon badge; form auto-expands in dropdown |
 | 😴 Snooze 5m | Survey form button, re-fires as `snoozed` |
+| ▶ Start day / ⏹ Clock out | Dropdown 🕘 Workday card, once per day (times editable via ✏️) |
+| ⏸ Take a break / ▶ Back | Dropdown, silences prompts until back (lunch, coffee…) |
 | ⏸️ Pause / ▶️ Resume | Dropdown, pauses until resume (no persist across relaunch) |
 | 📈 Open Stats | Dropdown → `Stats` window |
 | 📄 Open CSV / 📁 Reveal | Dropdown |
@@ -77,12 +82,26 @@ Example:
 - Sliders empty on leisure rows
 - `trigger`: `random` | `manual` | `snoozed` | `demo`
 
+Workday history: `~/Documents/workstats_days.csv` (one row per day)
+
+```csv
+date,start_iso,end_iso,breaks
+2026-09-08,2026-09-08T09:12:00.000Z,2026-09-08T18:05:00.000Z,2026-09-08T12:00:00.000Z~2026-09-08T12:45:00.000Z
+```
+
+- `date`: `yyyy-MM-dd` local, row key
+- `start`/`end`: ISO8601 clock-in/out (empty when unset)
+- `breaks`: `pauseISO~resumeISO;…` (resume empty while break open; empty when no breaks)
+
 ## 📈 Stats logic
 
 - Daily averages use working check-ins only; leisure counts toward volume + working-%.
 - Score (higher = better): `(focus + accomplishment + (6 − procrastination)) / 3`, 1–5 scale.
 - 🌟 Best / 🐌 toughest day = max / min daily score.
 - ⏰ Peak hour = hour (9–17) with highest mean focus. 📅 Best weekday likewise.
+- 🌅 Avg start = mean clock-in time; 🐦 marks earliest-start day. Untracked days show `—`.
+- ⏳ Avg active = mean net day length (gross clock-in→out minus breaks), closed days only; past days missing clock-out cap at midnight.
+- ⚡️ Focused share = % of in-active-time working check-ins with focus ≥4 (samples, not hours). Days with no clock-in record count as fully active.
 - Charts: Swift Charts, y-domain 0–5.5.
 
 ## 🛠️ Project layout
@@ -93,11 +112,12 @@ Info.plist                     # CFBundle* + LSUIElement=true
 build-app.sh                   # release build → WorkStats.app bundle
 Sources/workstats/
   WorkStatsApp.swift           # @main App, MenuBarExtra + Windows, scheduler wiring
-  MenuBarView.swift            # dropdown: header, inline form toggle, actions
-  SurveyView.swift             # SurveyFormView (shared) + SurveyView (popup)
-  Scheduler.swift              # 20–40min timer, 9–18 weekday window, UNUserNotification
+  MenuBarView.swift            # dropdown: header, inline form toggle, workday card, actions
+  SurveyView.swift             # SurveyFormView (shared) + CheckinPanel (notification-tap window)
+  Scheduler.swift              # random-interval timer, 9–18 weekday window, shift/break gating, manual-only mode, UNUserNotification
   Checkin.swift                # model + csvRow()
   CheckinStore.swift           # append + today count, ~/Documents/workstats.csv
+  WorkdayStore.swift           # clock-in/out + breaks, ~/Documents/workstats_days.csv, active/break math
   StatsEngine.swift            # CSV parse, daily/hour/weekday aggs, demo seed
   StatsView.swift              # stats window, charts, cards, table
 ```
@@ -115,4 +135,4 @@ Edit prompts/schedule in `Scheduler.swift` (`minInterval`/`maxInterval`, `isWork
 
 ## 🔒 Privacy
 
-Local only. No network, no telemetry. Data lives in your Documents CSV. Delete file to wipe history.
+Local only. No network, no telemetry. Data lives in two Documents CSVs (`workstats.csv`, `workstats_days.csv`). Delete both files to wipe history.

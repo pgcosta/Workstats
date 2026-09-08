@@ -32,8 +32,13 @@ Core UX principles (do not regress):
    - Submit (`recordCheckin()`) restarts the window from now. Snooze (5 min)
      short-circuits, then fires as `"snoozed"`. Skip just clears `attention`
      (fallback timer already pending).
-   - Outside Mon–Fri 9:00–18:00 → timer jumps to next 9:00 weekday.
-     `pausedToday` suppresses everything until resume.
+    - Outside Mon–Fri 9:00–18:00 → timer jumps to next 9:00 weekday.
+      `pausedToday` suppresses everything until resume.
+    - Shift gate (synced from `WorkdayStore` by `MenuBarBridge` via
+      `syncShift`, stale-day flags dropped): open shift stretches the window
+      past 9–18; `onBreak` silences until resume; clocked-out day parks to
+      tomorrow 9:00 (legacy) or idles (manual-only). `manualOnly` (persisted
+      `workstats.manualOnly`, default off) fires ONLY while clocked in.
 2. `attention` (App-level `@State`) drives the `bell.badge.fill` icon and an
    amber "Time for a check-in!" banner in the dropdown; `.onChange` expands
    the inline form. Save/Snooze/Skip clear it.
@@ -43,19 +48,27 @@ Core UX principles (do not regress):
 4. `StatsView` re-parses the CSV via `StatsEngine.load()` on appear and on
    every `store.todayCount` change. All stats derive from working rows only;
    leisure rows count toward volume / working-%.
+5. `WorkdayStore` (`~/Documents/workstats_days.csv`, one row/day:
+   `date,start_iso,end_iso,breaks` with `pause~resume;…`) owns clock-in/out +
+   mid-shift breaks. Stats derive avg start (🐦 earliest), net active
+   (gross − breaks, closed days only, missing clock-out capped at midnight),
+   focused share (% active-time check-ins with focus ≥4; untracked days count
+   as fully active). Days without clock-in data render `—`, never pollute
+   check-in aggs.
 
 ## Files
 
 | File | Owns |
 |---|---|
 | `WorkStatsApp.swift` | `@main` App; `MenuBarExtra` + `stats` Window; `attention` flag; `MenuBarBridge` wiring |
-| `MenuBarView.swift` | Dropdown: header (hidden next-time + 👁️), attention banner, inline form, rhythm presets, stats/CSV/quit actions, 🚀 login toggle |
-| `SurveyView.swift` | `SurveyFormView` (sliders, badge colors, save flash); trigger labels |
-| `Scheduler.swift` | Timer windows, work-hours gate, silent banner + sound, rhythm presets, login-independent |
+| `MenuBarView.swift` | Dropdown: header (hidden next-time + 👁️), attention banner, inline form, workday clock-in/out + break card, rhythm presets, stats/CSV/quit actions, 🚀 login toggle |
+| `SurveyView.swift` | `SurveyFormView` (sliders, badge colors, save flash); trigger labels; `CheckinPanel` (notification-tap window) |
+| `Scheduler.swift` | Timer windows, work-hours gate, shift/break gating + manual-only mode, silent banner + sound, rhythm presets, login-independent |
 | `Checkin.swift` | Model + `csvRow()`; CSV schema lives here |
 | `CheckinStore.swift` | Append + `todayCount`; `static fileURL` |
+| `WorkdayStore.swift` | Clock-in/out + breaks; `~/Documents/workstats_days.csv`; active/break math; `isActive(_)` |
 | `StatsEngine.swift` | CSV parse, daily/hourly/weekday aggs, score, demo seeder |
-| `StatsView.swift` | Charts + cards + day table; `StatsModel` |
+| `StatsView.swift` | Charts + cards (avg start, avg active, focused share) + day table; `StatsModel` |
 | `Package.swift` | swift-tools 5.9, macOS 13+, executable `workstats` |
 | `Info.plist` | `LSUIElement=true` (menu bar only), bundle id `com.workstats.app` |
 | `build-app.sh` | `swift build -c release` → `WorkStats.app` bundle (+ `Assets/AppIcon.icns`, ad-hoc `codesign`, required for Notification Center identity) |
