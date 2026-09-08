@@ -106,6 +106,7 @@ struct MenuBarBridge: View {
         scheduler.syncShift(
             open: workdays.isOpenToday,
             endedToday: workdays.hasEndedToday,
+            onBreak: workdays.isOnBreakToday,
             day: Calendar.current.startOfDay(for: Date())
         )
         scheduler.scheduleNext(reason: "shift")

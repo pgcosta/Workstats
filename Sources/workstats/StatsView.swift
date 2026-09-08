@@ -99,7 +99,8 @@ struct StatsView: View {
             StatCard(emoji: "⏰", title: "Peak focus hour", value: s.bestHour.map { "\($0.hour)h" } ?? "—", sub: s.bestHour.map { String(format: "%.1f avg • %d logs", $0.focus, $0.count) } ?? "", color: .mint)
             StatCard(emoji: "📅", title: "Best weekday", value: s.bestWeekday?.name ?? "—", sub: s.bestWeekday.map { String(format: "%.1f avg focus", $0.focus) } ?? "", color: .indigo)
             StatCard(emoji: "🌅", title: "Avg start", value: avgStartText.value, sub: avgStartText.sub, color: .orange)
-            StatCard(emoji: "⏳", title: "Avg day length", value: avgLengthText.value, sub: avgLengthText.sub, color: .teal)
+            StatCard(emoji: "⏳", title: "Avg active", value: avgLengthText.value, sub: avgLengthText.sub, color: .teal)
+            StatCard(emoji: "⚡️", title: "Focused share", value: focusShareText.value, sub: focusShareText.sub, color: .yellow)
         }
     }
 
@@ -133,14 +134,33 @@ struct StatsView: View {
         return (String(format: "%02d:%02d", avg / 60, avg % 60), sub)
     }
 
+    /// Net active day length: gross minus breaks. Only closed days count
+    /// (open today is still running); sub keeps gross + breaks visible.
     private var avgLengthText: (value: String, sub: String) {
-        let lens = rangedWorkdays.compactMap { d -> Int? in
-            guard let s = d.start, let e = d.end, e > s else { return nil }
-            return Int(e.timeIntervalSince(s) / 60)
+        let rows = rangedWorkdays.filter { $0.start != nil && $0.end != nil }
+        guard !rows.isEmpty else { return ("—", "clock out to track") }
+        let net = rows.map { workdays.activeSeconds($0) / 60 }
+        let brk = rows.map { workdays.breakSeconds($0) / 60 }
+        let avgNet = net.reduce(0, +) / net.count
+        let avgBrk = brk.reduce(0, +) / brk.count
+        return (hmm(avgNet * 60),
+                "gross \(hmm((avgNet + avgBrk) * 60)) • breaks \(hmm(avgBrk * 60)) • \(rows.count)d")
+    }
+
+    /// Share of in-active-time working check-ins with focus ≥ 4.
+    /// Samples, not hours — labeled honestly.
+    private var focusShareText: (value: String, sub: String) {
+        let rows = vm.filtered.filter {
+            $0.mode == .working && $0.focus != nil && workdays.isActive($0.timestamp)
         }
-        guard !lens.isEmpty else { return ("—", "clock out to track") }
-        let avg = lens.reduce(0, +) / lens.count
-        return (String(format: "%dh%02d", avg / 60, avg % 60), "across \(lens.count) days")
+        guard !rows.isEmpty else { return ("—", "no active check-ins") }
+        let focused = rows.filter { ($0.focus ?? 0) >= 4 }.count
+        let pct = Int((Double(focused) / Double(rows.count) * 100).rounded())
+        return ("\(pct)%", "\(focused)/\(rows.count) active ≥4")
+    }
+
+    private func hmm(_ secs: Int) -> String {
+        String(format: "%dh%02d", secs / 3600, (secs % 3600) / 60)
     }
 
     private func minsOf(_ d: Date) -> Int {
@@ -273,11 +293,11 @@ struct StatsView: View {
     }
 
     private var dayTable: some View {
-        chartCard(title: "🗓️ Day-by-day", sub: "Sorted oldest → newest • 🐦 = earliest start") {
+        chartCard(title: "🗓️ Day-by-day", sub: "Sorted oldest → newest • 🐦 = earliest start • Active = net of breaks") {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                 GridRow {
                     Text("Day").bold(); Text("Logs").bold()
-                    Text("🌅").bold(); Text("🌙").bold()
+                    Text("🌅").bold(); Text("🌙").bold(); Text("Active").bold()
                     Text("🎯").bold(); Text("🌀").bold(); Text("🏆").bold(); Text("Score").bold()
                 }
                 .font(.caption).foregroundStyle(.secondary)
@@ -289,6 +309,7 @@ struct StatsView: View {
                         Text("\(d.count)")
                         Text(startCell(w, earliest: earliestStartDay))
                         Text(w?.end.map(hm) ?? "—")
+                        Text(activeCell(w))
                         Text(d.focus.map { String(format: "%.1f", $0) } ?? "—")
                         Text(d.procrast.map { String(format: "%.1f", $0) } ?? "—")
                         Text(d.accomp.map { String(format: "%.1f", $0) } ?? "—")
@@ -316,8 +337,7 @@ struct StatsView: View {
             .map { Calendar.current.startOfDay(for: $0.date) }
     }
 
-    private func startCell(_ w: Workday?, earliest: Date?) -> String {
-        guard let s = w?.start else { return "—" }
+    private func startCell(_ w: Workday?, earliest: Date?) -> String {        guard let s = w?.start else { return "—" }
         let bird: String
         if let w, let earliest, Calendar.current.isDate(w.date, inSameDayAs: earliest) {
             bird = "🐦"
@@ -325,6 +345,11 @@ struct StatsView: View {
             bird = ""
         }
         return "\(bird)\(hm(s))"
+    }
+
+    private func activeCell(_ w: Workday?) -> String {
+        guard let w, w.start != nil else { return "—" }
+        return hmm(workdays.activeSeconds(w))
     }
 
     // MARK: - Empty / footer

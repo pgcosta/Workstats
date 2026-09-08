@@ -272,6 +272,9 @@ struct MenuBarView: View {
             } else if scheduler.pausedToday {
                 Label("Paused today ⏸️", systemImage: "pause.circle")
                     .font(.caption).foregroundStyle(.secondary)
+            } else if workdays.isOnBreakToday {
+                Label("☕ On break — prompts paused", systemImage: "cup.and.saucer")
+                    .font(.caption).foregroundStyle(.secondary)
             } else if workdays.isOpenToday {
                 Label("🟢 On shift — prompts follow your day", systemImage: "clock.fill")
                     .font(.caption).foregroundStyle(.secondary)
@@ -326,14 +329,22 @@ struct MenuBarView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if let start = workdays.today?.start {
+            if let start = workdays.today?.start, let day = workdays.today {
                 HStack {
-                    if let end = workdays.today?.end {
-                        Text("\(hm(start))–\(hm(end)) ✓ \(dayLength(start: start, end: end))")
-                            .font(.callout.weight(.semibold))
-                    } else {
-                        Text("Since \(hm(start)) 🟢")
-                            .font(.callout.weight(.semibold))
+                    VStack(alignment: .leading, spacing: 1) {
+                        if let end = day.end {
+                            Text("\(hm(start))–\(hm(end)) ✓")
+                                .font(.callout.weight(.semibold))
+                        } else if workdays.isOnBreakToday, let pause = day.breaks.last(where: { $0.resume == nil })?.pause {
+                            Text("☕ On break since \(hm(pause))")
+                                .font(.callout.weight(.semibold))
+                        } else {
+                            Text("Since \(hm(start)) 🟢")
+                                .font(.callout.weight(.semibold))
+                        }
+                        Text(workdayReadout(day))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button(showWorkdayEdit ? "Done" : "✏️") {
@@ -361,16 +372,26 @@ struct MenuBarView: View {
                     }
                 }
 
-                HStack {
-                    if workdays.isOpenToday {
-                        rowButton("⏹ Clock out") { workdays.endDay() }
-                    } else {
+                if workdays.isOpenToday {
+                    HStack(spacing: 8) {
+                        if workdays.isOnBreakToday {
+                            halfButton("▶ Back to work") { workdays.resumeToday() }
+                        } else {
+                            halfButton("⏸ Take a break") { workdays.pauseToday() }
+                        }
+                        halfButton("⏹ Clock out") { workdays.endDay() }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                } else {
+                    HStack {
                         rowButton("↩ Reopen day") { workdays.reopenToday() }
                     }
+                    .buttonStyle(.plain)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
                 }
-                .buttonStyle(.plain)
-                .font(.callout)
-                .foregroundStyle(.primary)
             } else {
                 Button {
                     workdays.startDay()
@@ -406,9 +427,31 @@ struct MenuBarView: View {
     }
 
     private var workdayStatus: String {
+        if workdays.isOnBreakToday { return "☕ on break" }
         if workdays.isOpenToday { return "🟢 on shift" }
         if workdays.hasEndedToday { return "done ✓" }
         return scheduler.manualOnly ? "waiting for clock-in" : "not started"
+    }
+
+    /// Half-width tappable button for the Break / Back / Clock-out row.
+    private func halfButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .contentShape(Rectangle())
+        }
+    }
+
+    /// Net readout: active time minus breaks, e.g. "Active 5h12 • Breaks 0h45 (2)".
+    private func workdayReadout(_ day: Workday) -> String {
+        let a = workdays.activeSeconds(day)
+        let b = workdays.breakSeconds(day)
+        guard b >= 60 else { return "Active \(hmm(a)) • no breaks" }
+        return "Active \(hmm(a)) • Breaks \(hmm(b)) (\(day.breaks.count))"
+    }
+
+    private func hmm(_ secs: Int) -> String {
+        String(format: "%dh%02d", secs / 3600, (secs % 3600) / 60)
     }
 
     private func seedEdits() {
@@ -420,12 +463,6 @@ struct MenuBarView: View {
         let f = DateFormatter()
         f.timeStyle = .short
         return f.string(from: d)
-    }
-
-    private func dayLength(start: Date, end: Date) -> String {
-        let mins = Int(end.timeIntervalSince(start) / 60)
-        guard mins >= 0 else { return "" }
-        return String(format: "%dh%02d", mins / 60, mins % 60)
     }
 
     /// Takes the wall-clock time from a DatePicker and pins it to today.

@@ -22,6 +22,8 @@ final class Scheduler: ObservableObject {
     @Published var shiftOpen = false
     @Published var shiftEndedToday = false
     @Published var shiftDay: Date?
+    /// Mid-shift break (bathroom, lunch…). Prompts pause until back.
+    @Published var onBreak = false
     /// When on, prompts fire ONLY while clocked in — the 9-18 auto window is
     /// off. Default off (no behavior change until the user opts in).
     @Published var manualOnly = false
@@ -61,9 +63,10 @@ final class Scheduler: ObservableObject {
     }
 
     /// Called by MenuBarBridge whenever WorkdayStore changes.
-    func syncShift(open: Bool, endedToday: Bool, day: Date?) {
+    func syncShift(open: Bool, endedToday: Bool, onBreak: Bool, day: Date?) {
         shiftOpen = open
         shiftEndedToday = endedToday
+        self.onBreak = onBreak
         shiftDay = day
     }
 
@@ -97,6 +100,7 @@ final class Scheduler: ObservableObject {
         if let d = shiftDay, !Calendar.current.isDate(d, inSameDayAs: now) {
             shiftOpen = false
             shiftEndedToday = false
+            onBreak = false
             shiftDay = nil
         }
     }
@@ -107,6 +111,12 @@ final class Scheduler: ObservableObject {
         dropStaleShiftFlags(now: now)
 
         if pausedToday {
+            nextCheck = nil
+            return
+        }
+
+        // Mid-shift break: silent until back (resume re-arms via syncShift).
+        if onBreak {
             nextCheck = nil
             return
         }
