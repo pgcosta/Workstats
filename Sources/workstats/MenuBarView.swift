@@ -5,6 +5,7 @@ import ServiceManagement
 struct MenuBarView: View {
     @ObservedObject var store: CheckinStore
     @ObservedObject var scheduler: Scheduler
+    @ObservedObject var workdays: WorkdayStore
     @Binding var lastTrigger: String
     @Binding var attention: Bool
     @Environment(\.openWindow) var openWindow
@@ -15,6 +16,9 @@ struct MenuBarView: View {
     @State private var showForm = false
     @State private var revealNext = false
     @State private var showRhythm = false
+    @State private var showWorkdayEdit = false
+    @State private var editStart = Date()
+    @State private var editEnd = Date()
     @State private var launchAtLogin = false
     @State private var loginError: String?
     @State private var todayEnergy = TodayEnergy()
@@ -126,6 +130,10 @@ struct MenuBarView: View {
                 .background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
+
+            Divider()
+
+            workdayCard
 
             Divider()
 
@@ -264,6 +272,15 @@ struct MenuBarView: View {
             } else if scheduler.pausedToday {
                 Label("Paused today ⏸️", systemImage: "pause.circle")
                     .font(.caption).foregroundStyle(.secondary)
+            } else if workdays.isOpenToday {
+                Label("🟢 On shift — prompts follow your day", systemImage: "clock.fill")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if workdays.hasEndedToday {
+                Label("Day wrapped up ✓", systemImage: "checkmark.circle")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if scheduler.manualOnly {
+                Label("Manual mode — clock in to start prompts", systemImage: "clock")
+                    .font(.caption).foregroundStyle(.secondary)
             } else {
                 Label("Outside 9–18 weekdays 🌙", systemImage: "moon")
                     .font(.caption).foregroundStyle(.secondary)
@@ -290,6 +307,134 @@ struct MenuBarView: View {
         let d = DateFormatter()
         d.dateFormat = "EEE"
         return "\(d.string(from: date)) ~\(time)"
+    }
+
+    // MARK: - Workday clock-in/out (logon/logoff)
+
+    /// Once-per-day clock-in. Deliberately NOT in the check-in form: start/end
+    /// happen once, check-ins happen all day. One tap, editable after the fact
+    /// (started at 9 but logging at 9:20). Times land in workstats_days.csv and
+    /// power the early-bird stats; the prompt loop follows the shift.
+    private var workdayCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("🕘 Workday")
+                    .font(.callout.weight(.semibold))
+                Spacer()
+                Text(workdayStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let start = workdays.today?.start {
+                HStack {
+                    if let end = workdays.today?.end {
+                        Text("\(hm(start))–\(hm(end)) ✓ \(dayLength(start: start, end: end))")
+                            .font(.callout.weight(.semibold))
+                    } else {
+                        Text("Since \(hm(start)) 🟢")
+                            .font(.callout.weight(.semibold))
+                    }
+                    Spacer()
+                    Button(showWorkdayEdit ? "Done" : "✏️") {
+                        if !showWorkdayEdit { seedEdits() }
+                        withAnimation { showWorkdayEdit.toggle() }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .help("Correct the logged time")
+                }
+
+                if showWorkdayEdit {
+                    DatePicker("Start", selection: $editStart, displayedComponents: .hourAndMinute)
+                        .font(.caption)
+                        .onChange(of: editStart) { _ in
+                            workdays.setStart(applyTime(editStart, to: Date()))
+                        }
+                    if workdays.today?.end != nil {
+                        DatePicker("End", selection: $editEnd, displayedComponents: .hourAndMinute)
+                            .font(.caption)
+                            .onChange(of: editEnd) { _ in
+                                workdays.setEnd(applyTime(editEnd, to: Date()))
+                            }
+                    }
+                }
+
+                HStack {
+                    if workdays.isOpenToday {
+                        rowButton("⏹ Clock out") { workdays.endDay() }
+                    } else {
+                        rowButton("↩ Reopen day") { workdays.reopenToday() }
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.callout)
+                .foregroundStyle(.primary)
+            } else {
+                Button {
+                    workdays.startDay()
+                } label: {
+                    HStack {
+                        Text("▶ Start day")
+                            .font(.callout.weight(.bold))
+                        Spacer()
+                        Text("clock in")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Text("One tap when work starts — prompts then follow your day, and Stats learns your early-bird pattern.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Toggle("Manual prompts only", isOn: Binding(
+                get: { scheduler.manualOnly },
+                set: { scheduler.setManualOnly($0) }
+            ))
+            .font(.caption)
+            .help(scheduler.manualOnly
+                  ? "Prompts fire ONLY while clocked in — the 9–18 auto window is off"
+                  : "Turn on to ignore 9–18: prompts start at clock-in, stop at clock-out")
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var workdayStatus: String {
+        if workdays.isOpenToday { return "🟢 on shift" }
+        if workdays.hasEndedToday { return "done ✓" }
+        return scheduler.manualOnly ? "waiting for clock-in" : "not started"
+    }
+
+    private func seedEdits() {
+        if let s = workdays.today?.start { editStart = s }
+        if let e = workdays.today?.end { editEnd = e }
+    }
+
+    private func hm(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.timeStyle = .short
+        return f.string(from: d)
+    }
+
+    private func dayLength(start: Date, end: Date) -> String {
+        let mins = Int(end.timeIntervalSince(start) / 60)
+        guard mins >= 0 else { return "" }
+        return String(format: "%dh%02d", mins / 60, mins % 60)
+    }
+
+    /// Takes the wall-clock time from a DatePicker and pins it to today.
+    private func applyTime(_ time: Date, to day: Date) -> Date {
+        let cal = Calendar.current
+        let t = cal.dateComponents([.hour, .minute], from: time)
+        var d = cal.dateComponents([.year, .month, .day], from: day)
+        d.hour = t.hour; d.minute = t.minute
+        return cal.date(from: d) ?? time
     }
 
     // MARK: - Prompt rhythm settings

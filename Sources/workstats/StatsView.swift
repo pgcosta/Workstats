@@ -36,6 +36,7 @@ final class StatsModel: ObservableObject {
 struct StatsView: View {
     @StateObject private var vm = StatsModel()
     @ObservedObject var store: CheckinStore
+    @ObservedObject var workdays: WorkdayStore
 
     var body: some View {
         ScrollView {
@@ -97,7 +98,60 @@ struct StatsView: View {
             StatCard(emoji: "🐌", title: "Toughest day", value: s.worstDay?.label ?? "—", sub: s.worstDay?.score.map { String(format: "score %.1f", $0) } ?? "", color: .red)
             StatCard(emoji: "⏰", title: "Peak focus hour", value: s.bestHour.map { "\($0.hour)h" } ?? "—", sub: s.bestHour.map { String(format: "%.1f avg • %d logs", $0.focus, $0.count) } ?? "", color: .mint)
             StatCard(emoji: "📅", title: "Best weekday", value: s.bestWeekday?.name ?? "—", sub: s.bestWeekday.map { String(format: "%.1f avg focus", $0.focus) } ?? "", color: .indigo)
+            StatCard(emoji: "🌅", title: "Avg start", value: avgStartText.value, sub: avgStartText.sub, color: .orange)
+            StatCard(emoji: "⏳", title: "Avg day length", value: avgLengthText.value, sub: avgLengthText.sub, color: .teal)
         }
+    }
+
+    // MARK: - Workday (logon/logoff) aggregates
+
+    /// Same range cutoff as StatsModel.filtered, applied to clock-in history.
+    private var rangedWorkdays: [Workday] {
+        guard vm.range != .all else { return workdays.days }
+        let cutoff = Calendar.current.date(byAdding: .day, value: -vm.range.rawValue, to: Date()) ?? Date()
+        return workdays.days.filter { $0.date >= Calendar.current.startOfDay(for: cutoff) }
+    }
+
+    private var avgStartText: (value: String, sub: String) {
+        let starts = rangedWorkdays.compactMap(\.start)
+        guard !starts.isEmpty else { return ("—", "clock in to track") }
+        let cal = Calendar.current
+        let mins = starts.map { cal.component(.hour, from: $0) * 60 + cal.component(.minute, from: $0) }
+        let avg = mins.reduce(0, +) / mins.count
+        let earliest = rangedWorkdays.compactMap { d -> (Date, Date)? in
+            guard let s = d.start else { return nil }
+            return (d.date, s)
+        }.min { minsOf($0.1) < minsOf($1.1) }
+        let dayFmt = DateFormatter()
+        dayFmt.dateFormat = "EEE"
+        let sub: String
+        if let e = earliest {
+            sub = "🐦 earliest \(dayFmt.string(from: e.0)) \(hm(e.1)) • \(starts.count)d"
+        } else {
+            sub = "\(starts.count) days"
+        }
+        return (String(format: "%02d:%02d", avg / 60, avg % 60), sub)
+    }
+
+    private var avgLengthText: (value: String, sub: String) {
+        let lens = rangedWorkdays.compactMap { d -> Int? in
+            guard let s = d.start, let e = d.end, e > s else { return nil }
+            return Int(e.timeIntervalSince(s) / 60)
+        }
+        guard !lens.isEmpty else { return ("—", "clock out to track") }
+        let avg = lens.reduce(0, +) / lens.count
+        return (String(format: "%dh%02d", avg / 60, avg % 60), "across \(lens.count) days")
+    }
+
+    private func minsOf(_ d: Date) -> Int {
+        let cal = Calendar.current
+        return cal.component(.hour, from: d) * 60 + cal.component(.minute, from: d)
+    }
+
+    private func hm(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: d)
     }
 
     // MARK: - Charts
@@ -219,18 +273,22 @@ struct StatsView: View {
     }
 
     private var dayTable: some View {
-        chartCard(title: "🗓️ Day-by-day", sub: "Sorted oldest → newest") {
+        chartCard(title: "🗓️ Day-by-day", sub: "Sorted oldest → newest • 🐦 = earliest start") {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                 GridRow {
                     Text("Day").bold(); Text("Logs").bold()
+                    Text("🌅").bold(); Text("🌙").bold()
                     Text("🎯").bold(); Text("🌀").bold(); Text("🏆").bold(); Text("Score").bold()
                 }
                 .font(.caption).foregroundStyle(.secondary)
                 Divider()
                 ForEach(vm.days) { d in
+                    let w = workdayByDay[d.day]
                     GridRow {
                         Text(d.label)
                         Text("\(d.count)")
+                        Text(startCell(w, earliest: earliestStartDay))
+                        Text(w?.end.map(hm) ?? "—")
                         Text(d.focus.map { String(format: "%.1f", $0) } ?? "—")
                         Text(d.procrast.map { String(format: "%.1f", $0) } ?? "—")
                         Text(d.accomp.map { String(format: "%.1f", $0) } ?? "—")
@@ -242,6 +300,31 @@ struct StatsView: View {
                 }
             }
         }
+    }
+
+    private var workdayByDay: [Date: Workday] {
+        Dictionary(uniqueKeysWithValues: workdays.days.map {
+            (Calendar.current.startOfDay(for: $0.date), $0)
+        })
+    }
+
+    /// Day-key of the earliest clock-in in range (the 🐦 early-bird day).
+    private var earliestStartDay: Date? {
+        rangedWorkdays
+            .filter { $0.start != nil }
+            .min { minsOf($0.start!) < minsOf($1.start!) }
+            .map { Calendar.current.startOfDay(for: $0.date) }
+    }
+
+    private func startCell(_ w: Workday?, earliest: Date?) -> String {
+        guard let s = w?.start else { return "—" }
+        let bird: String
+        if let w, let earliest, Calendar.current.isDate(w.date, inSameDayAs: earliest) {
+            bird = "🐦"
+        } else {
+            bird = ""
+        }
+        return "\(bird)\(hm(s))"
     }
 
     // MARK: - Empty / footer

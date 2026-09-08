@@ -15,11 +15,22 @@ final class Scheduler: ObservableObject {
     @Published var notificationsOK = true // false when system notifications denied/ephemeral-off
     @Published var minMinutes: Double
     @Published var maxMinutes: Double
+    /// Shift state, synced from WorkdayStore by MenuBarBridge (Scheduler
+    /// doesn't own the store to keep the prompt loop dependency-free).
+    /// While a shift is open prompts fire even outside 9-18; after clock-out
+    /// the day is done. Stale flags (synced yesterday) are ignored via shiftDay.
+    @Published var shiftOpen = false
+    @Published var shiftEndedToday = false
+    @Published var shiftDay: Date?
+    /// When on, prompts fire ONLY while clocked in — the 9-18 auto window is
+    /// off. Default off (no behavior change until the user opts in).
+    @Published var manualOnly = false
 
     private var timer: Timer?
     private let defaults = UserDefaults.standard
     private let minKey = "workstats.minMinutes"
     private let maxKey = "workstats.maxMinutes"
+    private let manualKey = "workstats.manualOnly"
 
     /// Friendly presets: (emoji, name, min, max)
     static let presets: [(String, String, Double, Double)] = [
@@ -37,8 +48,23 @@ final class Scheduler: ObservableObject {
         self.minMinutes = savedMin >= 2 ? savedMin : 10
         self.maxMinutes = savedMax > savedMin ? savedMax : 30
         if self.maxMinutes <= self.minMinutes { self.maxMinutes = self.minMinutes + 10 }
+        self.manualOnly = defaults.bool(forKey: manualKey)
         requestNotificationAuth()
         scheduleNext(reason: "init")
+    }
+
+    /// Toggle manual-only prompts (only while clocked in). Persists + restarts clock.
+    func setManualOnly(_ on: Bool) {
+        manualOnly = on
+        defaults.set(on, forKey: manualKey)
+        scheduleNext(reason: "settings")
+    }
+
+    /// Called by MenuBarBridge whenever WorkdayStore changes.
+    func syncShift(open: Bool, endedToday: Bool, day: Date?) {
+        shiftOpen = open
+        shiftEndedToday = endedToday
+        shiftDay = day
     }
 
     /// Change notification window (minutes). Clamps + persists + restarts clock.
@@ -65,16 +91,52 @@ final class Scheduler: ObservableObject {
         "\(Int(minMinutes))–\(Int(maxMinutes)) min"
     }
 
+    /// Shift flags synced from yesterday are dead — a new day starts clean
+    /// (legacy 9-18 or idle manual-only until next clock-in).
+    private func dropStaleShiftFlags(now: Date = Date()) {
+        if let d = shiftDay, !Calendar.current.isDate(d, inSameDayAs: now) {
+            shiftOpen = false
+            shiftEndedToday = false
+            shiftDay = nil
+        }
+    }
+
     func scheduleNext(reason: String) {
         timer?.invalidate()
         let now = Date()
+        dropStaleShiftFlags(now: now)
 
         if pausedToday {
             nextCheck = nil
             return
         }
 
-        if !isWorkTime(now) {
+        // Clocked out: day is done. Manual-only idles until next clock-in,
+        // legacy parks until tomorrow 9:00.
+        if shiftEndedToday {
+            if manualOnly {
+                nextCheck = nil
+                return
+            }
+            if let next = nextWorkTime(after: now) {
+                nextCheck = next
+                let delay = next.timeIntervalSince(now)
+                timer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+                    self?.scheduleNext(reason: "window-open")
+                }
+            } else {
+                nextCheck = nil
+            }
+            return
+        }
+
+        // Manual-only: silence until clock-in.
+        if manualOnly && !shiftOpen {
+            nextCheck = nil
+            return
+        }
+
+        if !isWorkTime(now) && !shiftOpen {
             // Jump to next work window
             if let next = nextWorkTime(after: now) {
                 nextCheck = next
@@ -88,8 +150,9 @@ final class Scheduler: ObservableObject {
 
         let interval = randomInterval()
         var fire = now.addingTimeInterval(interval)
-        // If fire lands outside window, clamp to next window instead
-        if !isWorkTime(fire) {
+        // If fire lands outside window, clamp to next window instead.
+        // An open shift stretches the window: no clamping while clocked in.
+        if !isWorkTime(fire) && !shiftOpen {
             fire = nextWorkTime(after: now) ?? fire
         }
         nextCheck = fire
