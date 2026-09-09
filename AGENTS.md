@@ -92,8 +92,12 @@ open WorkStats.app     # first launch: allow notifications
 ```
 
 Always `swift build` after edits; also run `./build-app.sh` when the bundle
-matters (Info.plist / packaging). Commit with conventional messages
-(`feat:`, `fix:` …). Ignored: `.build/`, `WorkStats.app/`, `.DS_Store`.
+matters (Info.plist / packaging). Mandatory gate before every commit/push:
+`swift build` must pass (plus `./build-app.sh` if the change affects the
+running app); never commit or push on a red build. Commit with conventional
+messages (`feat:`, `fix:` …). Ignored: `.build/`, `WorkStats.app/`,
+`.DS_Store`. Never force-add the built `WorkStats.app/` — binary stays local;
+main carries source only, each machine rebuilds via `./build-app.sh`.
 
 ## Experiment workflow (rollback-safe changes)
 
