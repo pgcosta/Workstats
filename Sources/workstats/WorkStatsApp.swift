@@ -52,13 +52,18 @@ struct WorkStatsApp: App {
         } label: {
             // Logo always stays chart.bar — pending check-ins show as an
             // orange dot, not a swapped bell icon (easier to spot, less noise).
+            // NB: dot must stay INSIDE icon bounds — MenuBarExtra clips
+            // anything hanging outside, which made the old offset(x:3,y:-3)
+            // dot invisible.
             Image(systemName: "chart.bar")
                 .overlay(alignment: .topTrailing) {
                     if attention {
                         Circle()
                             .fill(.orange)
-                            .frame(width: 8, height: 8)
-                            .offset(x: 3, y: -3)
+                            .frame(width: 9, height: 9)
+                            .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                            .shadow(color: .orange, radius: 2)
+                            .offset(x: -1, y: 2)
                     }
                 }
                 .accessibilityLabel(attention ? "WorkStats — check-in pending" : "WorkStats")

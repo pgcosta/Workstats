@@ -29,6 +29,11 @@ final class Scheduler: ObservableObject {
     @Published var manualOnly = false
 
     private var timer: Timer?
+    private var reminderTimer: Timer?
+    /// Set on fire, cleared on submit/snooze/skip. Drives the 60 s re-nudge:
+    /// if user missed the toast (no visual cue seen), a second sound +
+    /// banner lands while the check-in is still pending.
+    private var pendingSince: Date?
     private let defaults = UserDefaults.standard
     private let minKey = "workstats.minMinutes"
     private let maxKey = "workstats.maxMinutes"
@@ -174,6 +179,8 @@ final class Scheduler: ObservableObject {
 
     func fire(trigger: String = "manual") {
         onFire?(trigger)
+        pendingSince = Date()
+        scheduleReminder()
         sendNotification()
         // Safety fallback: if user ignores the badge (never submits),
         // a fresh window still starts so prompts don't stall.
@@ -183,6 +190,7 @@ final class Scheduler: ObservableObject {
 
     /// Call on every submitted check-in: restart the 10-30 (or custom) window now.
     func recordCheckin() {
+        clearPending()
         scheduleNext(reason: "checkin")
     }
 
@@ -190,10 +198,12 @@ final class Scheduler: ObservableObject {
     /// (Previously Skip kept the stale fallback computed at fire time, which
     /// is why the revealed time could surprise — e.g. tomorrow 09:00.)
     func skip() {
+        clearPending()
         scheduleNext(reason: "skipped")
     }
 
     func snooze(minutes: Double = 5) {
+        clearPending()
         timer?.invalidate()
         let fire = Date().addingTimeInterval(minutes * 60)
         nextCheck = fire
@@ -203,6 +213,7 @@ final class Scheduler: ObservableObject {
     }
 
     func pauseToday() {
+        clearPending()
         pausedToday = true
         timer?.invalidate()
         nextCheck = nil
@@ -288,6 +299,7 @@ final class Scheduler: ObservableObject {
     /// `.timeSensitive` lets it break through most Focus modes.
     /// The menu-bar icon badge (attention flag via onFire) is the backup cue.
     private func sendNotification() {
+        playPing()
         let content = UNMutableNotificationContent()
         content.title = "WorkStats check-in"
         content.body = "Time for a quick check-in — click the 📊 icon in the menu bar."
@@ -300,5 +312,47 @@ final class Scheduler: ObservableObject {
             content: content,
             trigger: nil // immediate
         ))
+    }
+
+    /// Second nudge 60 s after fire, only while check-in still pending.
+    /// Covers missed-toast case: user busy, no visual cue seen.
+    private func scheduleReminder() {
+        reminderTimer?.invalidate()
+        reminderTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: false) { [weak self] _ in
+            guard let self, self.pendingSince != nil else { return }
+            self.sendReminder()
+        }
+    }
+
+    private func clearPending() {
+        pendingSince = nil
+        reminderTimer?.invalidate()
+        reminderTimer = nil
+    }
+
+    private func sendReminder() {
+        playPing()
+        let content = UNMutableNotificationContent()
+        content.title = "WorkStats check-in — still waiting"
+        content.body = "Quick check-in still pending — click the 📊 icon (orange dot) in the menu bar."
+        content.sound = .default
+        if #available(macOS 12, *) {
+            content.interruptionLevel = .timeSensitive
+        }
+        UNUserNotificationCenter.current().add(UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil // immediate
+        ))
+    }
+
+    /// Local Glass ping alongside the toast sound — audible even if the
+    /// banner auto-dismisses or Notification Center groups it away.
+    private func playPing() {
+        if let s = NSSound(named: "Glass") {
+            s.play()
+        } else {
+            NSSound.beep()
+        }
     }
 }
